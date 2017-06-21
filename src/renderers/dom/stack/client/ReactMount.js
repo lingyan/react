@@ -657,6 +657,28 @@ var ReactMount = {
     return true;
   },
 
+  _normalizeMarkup: function(container, markup) {
+    // because rootMarkup is retrieved from the DOM, various normalizations
+    // will have occurred which will not be present in `markup`. Here,
+    // insert markup into a <div> or <iframe> depending on the container
+    // type to perform the same normalizations before comparing.
+    var normalizer;
+    var normalizedMarkup;
+    if (container.nodeType === ELEMENT_NODE) {
+      normalizer = document.createElement('div');
+      normalizer.innerHTML = markup;
+      normalizedMarkup = normalizer.innerHTML;
+    } else {
+      normalizer = document.createElement('iframe');
+      document.body.appendChild(normalizer);
+      normalizer.contentDocument.write(markup);
+      normalizedMarkup =
+        normalizer.contentDocument.documentElement.outerHTML;
+      document.body.removeChild(normalizer);
+    }
+    return normalizedMarkup;
+  },
+
   _mountImageIntoNode: function(
     markup,
     container,
@@ -686,25 +708,20 @@ var ReactMount = {
           checksum,
         );
 
+        // [Problem] Does NOT work when container is document node
+        // Need better way to control whether to report markup diff.
+        // Alternatives I thought of, but did not like either:
+        // - augment ReactDOM.render() API to allow passing a 'reportMarkupDiff' flag
+        // - add props.reportMarkupDiff to the element being rendered
+        var shouldReportMarkupDiff =
+          container.hasAttribute &&
+          container.hasAttribute(ReactMarkupChecksum.MARKUP_DIFF_ATTR_NAME);
+
         var normalizedMarkup = markup;
         if (__DEV__) {
-          // because rootMarkup is retrieved from the DOM, various normalizations
-          // will have occurred which will not be present in `markup`. Here,
-          // insert markup into a <div> or <iframe> depending on the container
-          // type to perform the same normalizations before comparing.
-          var normalizer;
-          if (container.nodeType === ELEMENT_NODE) {
-            normalizer = document.createElement('div');
-            normalizer.innerHTML = markup;
-            normalizedMarkup = normalizer.innerHTML;
-          } else {
-            normalizer = document.createElement('iframe');
-            document.body.appendChild(normalizer);
-            normalizer.contentDocument.write(markup);
-            normalizedMarkup =
-              normalizer.contentDocument.documentElement.outerHTML;
-            document.body.removeChild(normalizer);
-          }
+          normalizedMarkup = _normalizeMarkup(container, markup);
+        } else if (shouldReportMarkupDiff) {
+          normalizedMarkup = _normalizeMarkup(container, markup);
         }
 
         var diffIndex = firstDifferenceIndex(normalizedMarkup, rootMarkup);
@@ -713,6 +730,12 @@ var ReactMount = {
           normalizedMarkup.substring(diffIndex - 20, diffIndex + 20) +
           '\n (server) ' +
           rootMarkup.substring(diffIndex - 20, diffIndex + 20);
+
+        if (shouldReportMarkupDiff) {
+          // record markup diff on the container node so that app can collect it
+          // and report back for debugging.
+          container.setAttribute(ReactMarkupChecksum.MARKUP_DIFF_ATTR_NAME, difference);
+        }
 
         invariant(
           container.nodeType !== DOCUMENT_NODE,

@@ -18,6 +18,7 @@ var COMMENT_START = /^<\!\-\-/;
 
 var ReactMarkupChecksum = {
   CHECKSUM_ATTR_NAME: 'data-react-checksum',
+  MARKUP_DIFF_ATTR_NAME: 'data-react-markup-diff',
 
   /**
    * @param {string} markup Markup string
